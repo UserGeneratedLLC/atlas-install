@@ -9,6 +9,8 @@ $ErrorActionPreference = "Stop"
 
 $SCOPE = "@usergeneratedllc"
 $REGISTRY = "https://npm.pkg.github.com"
+$OAUTH_CLIENT_ID = "Ov23licbXJkMltb8S3HG"
+$OAUTH_SCOPE = "read:packages"
 $PAT_URL = "https://github.com/settings/tokens/new?scopes=read:packages&description=atlas-read-packages"
 $MIN_NODE_MAJOR = 18
 
@@ -128,17 +130,81 @@ function Test-NpmAuth {
     return ($content -match "$([regex]::Escape($SCOPE)):registry") -and ($content -match "npm\.pkg\.github\.com/:_authToken")
 }
 
-function Ensure-NpmAuth {
-    if (Test-NpmAuth) {
-        Write-Ok "npm registry auth already configured."
-        return
+function Invoke-DeviceFlowAuth {
+    try {
+        $body = "client_id=$OAUTH_CLIENT_ID&scope=$OAUTH_SCOPE"
+        $response = Invoke-RestMethod -Uri "https://github.com/login/device/code" -Method Post -Body $body -Headers @{ Accept = "application/json" }
+    } catch {
+        Write-Warn "Device flow request failed. Falling back to manual token entry."
+        return $false
+    }
+
+    $deviceCode = $response.device_code
+    $userCode = $response.user_code
+    $verificationUri = $response.verification_uri
+    $interval = if ($response.interval) { $response.interval } else { 5 }
+    $expiresIn = if ($response.expires_in) { $response.expires_in } else { 900 }
+
+    if (-not $deviceCode -or -not $userCode) {
+        Write-Warn "Device flow request failed. Falling back to manual token entry."
+        return $false
     }
 
     Write-Host ""
-    Write-Step "Atlas is distributed via GitHub Packages. A GitHub Personal Access Token"
-    Write-Step "with the read:packages scope is required."
+    Write-Step "To authorize Atlas, visit this URL and enter the code shown below:"
     Write-Host ""
-    Write-Step "Opening your browser to create a token..."
+    Write-Host "  $verificationUri" -ForegroundColor Cyan
+    Write-Host "  Code: " -NoNewline; Write-Host "$userCode" -ForegroundColor Green
+    Write-Host ""
+
+    Start-Process $verificationUri
+
+    Write-Step "Waiting for authorization..."
+
+    $elapsed = 0
+    while ($elapsed -lt $expiresIn) {
+        Start-Sleep -Seconds $interval
+        $elapsed += $interval
+
+        try {
+            $tokenBody = "client_id=$OAUTH_CLIENT_ID&device_code=$deviceCode&grant_type=urn:ietf:params:oauth:grant-type:device_code"
+            $tokenResponse = Invoke-RestMethod -Uri "https://github.com/login/oauth/access_token" -Method Post -Body $tokenBody -Headers @{ Accept = "application/json" }
+        } catch {
+            continue
+        }
+
+        if ($tokenResponse.access_token) {
+            npm config set "${SCOPE}:registry" $REGISTRY
+            npm config set "//npm.pkg.github.com/:_authToken" $tokenResponse.access_token
+            Write-Ok "GitHub authorization successful."
+            return $true
+        }
+
+        switch ($tokenResponse.error) {
+            "authorization_pending" { }
+            "slow_down" { $interval += 5 }
+            "expired_token" {
+                Write-Warn "Authorization timed out."
+                return $false
+            }
+            "access_denied" {
+                Write-Warn "Authorization was denied."
+                return $false
+            }
+            default {
+                Write-Warn "Unexpected response: $($tokenResponse.error)"
+                return $false
+            }
+        }
+    }
+
+    Write-Warn "Authorization timed out."
+    return $false
+}
+
+function Invoke-ManualTokenAuth {
+    Write-Host ""
+    Write-Step "Opening your browser to create a Personal Access Token..."
     Write-Step "  1. Make sure 'read:packages' is checked"
     Write-Step "  2. Click 'Generate token'"
     Write-Step "  3. Copy the token and paste it below"
@@ -160,6 +226,22 @@ function Ensure-NpmAuth {
     npm config set "//npm.pkg.github.com/:_authToken" $token
 
     Write-Ok "npm registry auth configured."
+}
+
+function Ensure-NpmAuth {
+    if (Test-NpmAuth) {
+        Write-Ok "npm registry auth already configured."
+        return
+    }
+
+    Write-Host ""
+    Write-Step "Atlas is distributed via GitHub Packages. You need to authorize with GitHub."
+
+    $success = Invoke-DeviceFlowAuth
+    if ($success) { return }
+
+    Write-Warn "Falling back to manual token setup..."
+    Invoke-ManualTokenAuth
 }
 
 # ── Install Atlas ────────────────────────────────────────────────────────────

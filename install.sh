@@ -10,6 +10,8 @@ set -euo pipefail
 
 SCOPE="@usergeneratedllc"
 REGISTRY="https://npm.pkg.github.com"
+OAUTH_CLIENT_ID="Ov23licbXJkMltb8S3HG"
+OAUTH_SCOPE="read:packages"
 PAT_URL="https://github.com/settings/tokens/new?scopes=read:packages&description=atlas-read-packages"
 MIN_NODE_MAJOR=18
 
@@ -196,17 +198,94 @@ open_browser() {
   fi
 }
 
-ensure_npm_auth() {
-  if npmrc_has_registry && npmrc_has_token; then
-    ok "npm registry auth already configured."
-    return
+json_value() {
+  local json="$1" key="$2"
+  printf '%s' "$json" | sed -n 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*"\([^"]*\)".*/\1/p' | head -1
+}
+
+json_number() {
+  local json="$1" key="$2"
+  printf '%s' "$json" | sed -n 's/.*"'"$key"'"[[:space:]]*:[[:space:]]*\([0-9]*\).*/\1/p' | head -1
+}
+
+device_flow_auth() {
+  local response
+  response=$(curl -s -X POST "https://github.com/login/device/code" \
+    -H "Accept: application/json" \
+    -d "client_id=${OAUTH_CLIENT_ID}&scope=${OAUTH_SCOPE}")
+
+  local device_code user_code verification_uri interval expires_in
+  device_code=$(json_value "$response" "device_code")
+  user_code=$(json_value "$response" "user_code")
+  verification_uri=$(json_value "$response" "verification_uri")
+  interval=$(json_number "$response" "interval")
+  expires_in=$(json_number "$response" "expires_in")
+
+  if [ -z "$device_code" ] || [ -z "$user_code" ]; then
+    warn "Device flow request failed. Falling back to manual token entry."
+    return 1
   fi
 
+  : "${interval:=5}"
+  : "${expires_in:=900}"
+
   echo ""
-  info "Atlas is distributed via GitHub Packages. A GitHub Personal Access Token"
-  info "with the read:packages scope is required."
+  info "To authorize Atlas, visit this URL and enter the code shown below:"
   echo ""
-  info "Opening your browser to create a token..."
+  printf "  ${BOLD}${CYAN}%s${RESET}\n" "$verification_uri"
+  printf "  ${BOLD}Code: ${GREEN}%s${RESET}\n" "$user_code"
+  echo ""
+
+  open_browser "$verification_uri"
+
+  info "Waiting for authorization..."
+
+  local elapsed=0
+  while [ "$elapsed" -lt "$expires_in" ]; do
+    sleep "$interval"
+    elapsed=$((elapsed + interval))
+
+    local token_response
+    token_response=$(curl -s -X POST "https://github.com/login/oauth/access_token" \
+      -H "Accept: application/json" \
+      -d "client_id=${OAUTH_CLIENT_ID}&device_code=${device_code}&grant_type=urn:ietf:params:oauth:grant-type:device_code")
+
+    local access_token error_code
+    access_token=$(json_value "$token_response" "access_token")
+    error_code=$(json_value "$token_response" "error")
+
+    if [ -n "$access_token" ]; then
+      npm config set "${SCOPE}:registry" "$REGISTRY"
+      npm config set "//npm.pkg.github.com/:_authToken" "$access_token"
+      ok "GitHub authorization successful."
+      return 0
+    fi
+
+    case "$error_code" in
+      authorization_pending) ;;
+      slow_down) interval=$((interval + 5)) ;;
+      expired_token)
+        warn "Authorization timed out."
+        return 1
+        ;;
+      access_denied)
+        warn "Authorization was denied."
+        return 1
+        ;;
+      *)
+        warn "Unexpected response: $error_code"
+        return 1
+        ;;
+    esac
+  done
+
+  warn "Authorization timed out."
+  return 1
+}
+
+manual_token_auth() {
+  echo ""
+  info "Opening your browser to create a Personal Access Token..."
   info "  1. Make sure 'read:packages' is checked"
   info "  2. Click 'Generate token'"
   info "  3. Copy the token and paste it below"
@@ -217,7 +296,6 @@ ensure_npm_auth() {
   printf "${BOLD}${CYAN}[atlas]${RESET} Paste your GitHub token (input is hidden): "
   local token=""
 
-  # When piped from curl, stdin is the script itself -- reattach to the terminal
   if [ -t 0 ]; then
     read -rs token
   elif [ -e /dev/tty ]; then
@@ -233,6 +311,23 @@ ensure_npm_auth() {
   npm config set "//npm.pkg.github.com/:_authToken" "$token"
 
   ok "npm registry auth configured."
+}
+
+ensure_npm_auth() {
+  if npmrc_has_registry && npmrc_has_token; then
+    ok "npm registry auth already configured."
+    return
+  fi
+
+  echo ""
+  info "Atlas is distributed via GitHub Packages. You need to authorize with GitHub."
+
+  if device_flow_auth; then
+    return
+  fi
+
+  warn "Falling back to manual token setup..."
+  manual_token_auth
 }
 
 # ── Install Atlas ────────────────────────────────────────────────────────────
