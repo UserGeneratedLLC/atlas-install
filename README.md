@@ -1,6 +1,17 @@
-# Atlas
+<div align="center">
+    <img src="assets/logo-512.png" alt="Atlas" height="217" />
+</div>
 
-Atlas lets you build Roblox games using **Cursor** and **VS Code** instead of working entirely inside Studio. Edit scripts and models on your computer, and Atlas keeps everything in sync with Roblox Studio in real time.
+<div>&nbsp;</div>
+
+<div align="center">
+    <b>Atlas</b> lets you build Roblox games using <b>Cursor</b> and <b>VS Code</b><br>
+    instead of working entirely inside Studio.
+</div>
+
+<hr />
+
+Edit scripts and models on your computer, and Atlas keeps everything in sync with Roblox Studio in real time.
 
 > **You need access to install Atlas.** The installer will ask you to sign in with GitHub. If authorization fails, ask your team lead to add you to the organization.
 
