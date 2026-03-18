@@ -261,19 +261,6 @@ function Ensure-Atlas {
     }
 }
 
-function Run-AtlasInstall {
-    if (-not (Test-Command "atlas")) {
-        Write-Warn "Skipping plugin/extension install (atlas not on PATH)."
-        return
-    }
-    Write-Step "Installing Roblox Studio plugin and Cursor/VS Code extension..."
-    try {
-        atlas install
-    } catch {
-        Write-Warn "atlas install had issues -- you can retry with: atlas install"
-    }
-}
-
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 Write-Host ""
@@ -284,7 +271,6 @@ Ensure-Git
 Ensure-Node
 Ensure-NpmAuth
 Ensure-Atlas
-Run-AtlasInstall
 
 Write-Host ""
 Write-Ok "Done! Atlas is ready to use."

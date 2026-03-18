@@ -348,15 +348,6 @@ ensure_atlas() {
   fi
 }
 
-run_atlas_install() {
-  if ! command -v atlas >/dev/null 2>&1; then
-    warn "Skipping plugin/extension install (atlas not on PATH)."
-    return
-  fi
-  info "Installing Roblox Studio plugin and Cursor/VS Code extension..."
-  atlas install || warn "atlas install had issues -- you can retry with: atlas install"
-}
-
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
@@ -375,7 +366,6 @@ main() {
   ensure_node
   ensure_npm_auth
   ensure_atlas
-  run_atlas_install
 
   echo ""
   ok "Done! Atlas is ready to use."
