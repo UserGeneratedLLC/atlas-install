@@ -22,7 +22,18 @@ function Write-Err   { param([string]$Msg) Write-Host "[atlas] " -ForegroundColo
 function Refresh-Path {
     $machinePath = [System.Environment]::GetEnvironmentVariable("Path", "Machine")
     $userPath    = [System.Environment]::GetEnvironmentVariable("Path", "User")
-    $env:Path    = "$machinePath;$userPath"
+    $fresh       = "$machinePath;$userPath"
+
+    # Preserve process-level paths not in the registry (manual fallbacks from winget installs)
+    $registrySet = [System.Collections.Generic.HashSet[string]]::new([System.StringComparer]::OrdinalIgnoreCase)
+    foreach ($p in ($fresh -split ";")) {
+        if ($p -ne "") { [void]$registrySet.Add($p) }
+    }
+    $extras = foreach ($p in ($env:Path -split ";")) {
+        if ($p -ne "" -and -not $registrySet.Contains($p)) { $p }
+    }
+    if ($extras) { $fresh += ";" + ($extras -join ";") }
+    $env:Path = $fresh
 }
 
 function Test-Command {
