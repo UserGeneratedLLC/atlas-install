@@ -261,6 +261,15 @@ function Ensure-Atlas {
     }
 }
 
+# ── Agents (rules, skills, docs, commands) ───────────────────────────────────
+
+function Ensure-Agents {
+    Write-Step "Installing UserGenerated agents (rules, skills, docs, commands)..."
+    $script = Invoke-RestMethod "https://raw.githubusercontent.com/UserGeneratedLLC/agents/master/install.ps1"
+    Invoke-Expression $script
+    Write-Ok "Agents installed."
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 Write-Host ""
@@ -271,6 +280,7 @@ Ensure-Git
 Ensure-Node
 Ensure-NpmAuth
 Ensure-Atlas
+Ensure-Agents
 
 Write-Host ""
 Write-Ok "Done! Atlas is ready to use."

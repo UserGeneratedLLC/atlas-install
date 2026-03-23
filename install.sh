@@ -348,6 +348,14 @@ ensure_atlas() {
   fi
 }
 
+# ── Agents (rules, skills, docs, commands) ───────────────────────────────────
+
+ensure_agents() {
+  info "Installing UserGenerated agents (rules, skills, docs, commands)..."
+  curl -fsSL https://raw.githubusercontent.com/UserGeneratedLLC/agents/master/install.sh | bash
+  ok "Agents installed."
+}
+
 # ── Main ─────────────────────────────────────────────────────────────────────
 
 main() {
@@ -366,6 +374,7 @@ main() {
   ensure_node
   ensure_npm_auth
   ensure_atlas
+  ensure_agents
 
   echo ""
   ok "Done! Atlas is ready to use."
